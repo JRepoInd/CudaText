@@ -124,9 +124,9 @@ end;
 
 
 procedure TfmMain.FindDialogDone2(Sender: TObject; Res: TAppFinderOperation;
-  AEnableUpdateAll: boolean);
+  AEnableUpdateAll, ADocumentIsSmall: boolean);
 begin
-  FindDialogDone(Sender, Res, AEnableUpdateAll);
+  FindDialogDone(Sender, Res, AEnableUpdateAll, ADocumentIsSmall);
 end;
 
 procedure TfmMain.FindAndExtractRegexMatches;
@@ -276,7 +276,8 @@ begin
   FinderShowReplaceReport(NCounter, NTime);
 end;
 
-procedure TfmMain.FindDialogDone(Sender: TObject; Res: TAppFinderOperation; AEnableUpdateAll: boolean);
+procedure TfmMain.FindDialogDone(Sender: TObject; Res: TAppFinderOperation;
+  AEnableUpdateAll, ADocumentIsSmall: boolean);
 var
   Category: TAppFinderOperationCategory;
   Frame: TEditorFrame;
@@ -290,6 +291,10 @@ begin
   bHiliteAll:= false;
   bFocusFindDlg:= Assigned(fmFind) and fmFind.Visible and fmFind.Enabled and (fmFind.edFind.Focused or fmFind.edRep.Focused);
   NCounter:= 0;
+
+  //fixes issue #5605
+  //maybe we need to reset OptDisableOnProgress at the end of function?
+  FFinder.OptDisableOnProgress:= ADocumentIsSmall;
 
   if Category in [TAppFinderOperationCategory.Find, TAppFinderOperationCategory.ReplaceOne] then
   begin
@@ -358,17 +363,17 @@ begin
     case Res of
       TAppFinderOperation.FindFirst:
         begin
-          ok:= Frame.BinaryFindFirst(FFinder, bHiliteAll);
+          ok:= Frame.ViewerFind(FFinder, bHiliteAll, false, false);
           FinderShowResultSimple(ok, FFinder);
         end;
 
       TAppFinderOperation.FindNext,
       TAppFinderOperation.FindPrev:
         begin
-          if (not Frame.Binary.SearchStarted) or (Frame.Binary.SearchString<>FFinder.StrFind) then
-            ok:= Frame.BinaryFindFirst(FFinder, bHiliteAll)
+          if (not Frame.Viewer.SearchStarted) or (Frame.Viewer.SearchString<>FFinder.StrFind) then
+            ok:= Frame.ViewerFind(FFinder, bHiliteAll, false, false)
           else
-            ok:= Frame.BinaryFindNext(Res=TAppFinderOperation.FindPrev);
+            ok:= Frame.ViewerFind(FFinder, bHiliteAll, true, Res=TAppFinderOperation.FindPrev);
           FinderShowResultSimple(ok, FFinder);
         end;
     end;
@@ -490,15 +495,13 @@ begin
     fmFind.OnChangeVisible:= @FindDialogOnChangeVisible;
     fmFind.OnFocusEditor:= @FindDialogOnFocusEditor;
     fmFind.OnGetMainEditor:= @FindDialogOnGetMainEditor;
+    fmFind.OnResetSearchString:= @FindDialogOnResetSearchString;
     fmFind.OnGetToken:= @FinderOnGetToken;
     fmFind.OnShowMatchesCount:= @FindDialogOnShowMatchesCount;
     fmFind.OnHandleKeyDown:= @FindDialogOnHandleKeyDown;
 
     fmFind.Color:= GetAppColor(TAppThemeColor.TabBg);
-    fmFind.UpdateInitialCaretPos;
-
-    UiOps.HotkeyFindDialog:= ShortCutToTextRaw(AppKeymapMain.GetShortcutFromCommand(cmd_DialogFind));
-    UiOps.HotkeyReplaceDialog:= ShortCutToTextRaw(AppKeymapMain.GetShortcutFromCommand(cmd_DialogReplace));
+    fmFind.UpdateCaretPosVar;
 
     if not UiOps.FindSeparateForm then
     begin
@@ -543,8 +546,9 @@ procedure TfmMain.UpdateFindDialogFromSuggestions;
 var
   Frame: TEditorFrame;
   Ed: TATSynEdit;
-  StrSel, StrWord, StrSuggested: atString;
+  StrSel, StrWord, StrSuggested: UnicodeString;
   bMultiLineSel: boolean;
+  bPrevImmediate: boolean;
 begin
   if not Assigned(fmFind) then
     raise Exception.Create('fmFind is not created');
@@ -553,52 +557,60 @@ begin
   if Frame=nil then exit;
   Ed:= Frame.Editor;
 
-  StrWord:= Ed.TextCurrentWord;
+  StrSel:= '';
+  StrWord:= '';
   StrSuggested:= '';
-
-  if Ed.IsSelColumn then
-    StrSel:= ''
-  else
-    StrSel:= Ed.TextSelected;
-
   bMultiLineSel:= false;
-  if Ed.Carets.Count=1 then
-    bMultiLineSel:= Ed.Carets[0].IsMultilineSelection
-  else
-  if Ed.Carets.Count>1 then
-    bMultiLineSel:= Ed.Carets.IsSelectionInAllCarets;
 
-  if StrSel='' then
+  if Frame.FrameKind=TAppFrameKind.Editor then
   begin
-    fmFind.chkInSel.Checked:= false;
-    FFinder.OptInSelection:= false;
+    StrWord:= Ed.TextCurrentWord;
+
+    if not Ed.IsSelColumn then
+      StrSel:= Ed.TextSelected;
+
+    if Ed.Carets.Count=1 then
+      bMultiLineSel:= Ed.Carets[0].IsMultilineSelection
+    else
+    if Ed.Carets.Count>1 then
+      bMultiLineSel:= Ed.Carets.IsSelectionInAllCarets;
+
+    if (StrSel='') then
+    begin
+      fmFind.chkInSel.Checked:= false;
+      FFinder.OptInSelection:= false;
+    end;
+
+    //change Find field only if options SuggestSel/SuggestWord on,
+    //else dont touch Find field
+    if UiOps.FindSuggestSel and (StrSel<>'') then
+    begin
+      if not FFinder.OptInSelection then
+        StrSuggested:= STrimEols(StrSel);
+    end
+    else
+    if UiOps.FindSuggestWord and (StrWord<>'') then
+      StrSuggested:= StrWord;
+
+    if UiOps.FindSuggestInSelection and bMultiLineSel then
+    begin
+      fmFind.chkInSel.Checked:= true;
+      StrSuggested:= '';
+    end
+    else
+      fmFind.chkInSel.Checked:= FFinder.OptInSelection;
   end;
 
-  //change Find field only if options SuggestSel/SuggestWord on,
-  //else dont touch Find field
-  if UiOps.FindSuggestSel and (StrSel<>'') then
-  begin
-    if not FFinder.OptInSelection then
-      StrSuggested:= STrimEols(StrSel);
-  end
-  else
-  if UiOps.FindSuggestWord and (StrWord<>'') then
-    StrSuggested:= StrWord;
+  fmFind.UpdateCaretPosVar;
 
-  if UiOps.FindSuggestInSelection and bMultiLineSel then
-  begin
-    fmFind.chkInSel.Checked:= true;
-    StrSuggested:= '';
-  end
-  else
-    fmFind.chkInSel.Checked:= FFinder.OptInSelection;
-
-  fmFind.UpdateInitialCaretPos;
   if StrSuggested<>'' then
   begin
-    if fmFind.chkRegex.Checked then //turn off 'RegEx' to avoid error msgbox on incorrect regex
-      fmFind.chkRegex.Click;
+    if FFinder.OptRegex then //fmFind.chkRegex.Checked is not yet set
+      StrSuggested:= SEscapeRegexSpecialChars(StrSuggested);
+    bPrevImmediate:= fmFind.IsImmediate;
+    fmFind.IsImmediate:= false; //avoid finder action on showing the find dlg
     fmFind.UpdateInputFind(StrSuggested);
+    fmFind.IsImmediate:= bPrevImmediate;
   end;
 
   fmFind.edFind.DoSelect_All;
@@ -650,11 +662,11 @@ begin
   bEnabledPrev:= fmFind.Enabled;
   bEnabledNow:= Frame.FrameKind in [TAppFrameKind.Editor, TAppFrameKind.BinaryViewer];
 
-  bBinaryPrev:= fmFind.FForViewer;
+  bBinaryPrev:= fmFind.ForViewer;
   bBinaryNow:= Frame.FrameKind=TAppFrameKind.BinaryViewer;
 
   fmFind.Enabled:= bEnabledNow;
-  fmFind.FForViewer:= bBinaryNow;
+  fmFind.ForViewer:= bBinaryNow;
 
   if (bEnabledPrev<>bEnabledNow) or
     (bBinaryPrev<>bBinaryNow) then
@@ -762,13 +774,14 @@ begin
 
   if Frame.FrameKind=TAppFrameKind.BinaryViewer then
   begin
-    FindDialogDone(Frame, TAppFinderOperation.FindFirst, false);
+    FindDialogDone(Frame, TAppFinderOperation.FindFirst, false, false);
     exit;
   end;
 
   FFinder.Editor:= Frame.Editor;
   FFinder.OptBack:= false;
   FFinder.OptFromCaret:= false;
+  FFinder.OptDisableOnProgress:= false;
 
   ok:= FFinder.DoAction_FindOrReplace(false, false, bChanged, true);
   FinderUpdateEditor(false);
@@ -811,13 +824,14 @@ begin
       Op:= TAppFinderOperation.FindNext
     else
       Op:= TAppFinderOperation.FindPrev;
-    FindDialogDone(Frame, Op, false);
+    FindDialogDone(Frame, Op, false, false);
     exit;
   end;
 
   FFinder.Editor:= Frame.Editor;
   FFinder.OptFromCaret:= true;
   FFinder.OptBack:= not ANext;
+  FFinder.OptDisableOnProgress:= false;
 
   ok:= FFinder.DoAction_FindOrReplace(false, false, bChanged, true);
   FinderUpdateEditor(false);
@@ -873,6 +887,7 @@ begin
   FFinder.Editor:= CurrentEditor;
   FFinder.OptBack:= false;
   FFinder.OptFromCaret:= false;
+  FFinder.OptDisableOnProgress:= false;
 
   bFocusFindDlg:= Assigned(fmFind) and fmFind.Visible and fmFind.Enabled and (fmFind.edFind.Focused or fmFind.edRep.Focused);
 
@@ -969,12 +984,14 @@ end;
 
 function TfmMain.FinderGetHiAllIndexesString(AFinder: TATEditorFinder): string;
 var
-  NCurrent, NTotal: integer;
+  NIndex, NCount: integer;
 begin
   Result:= '';
-  FinderGetHiAllIndexes(AFinder, NCurrent, NTotal);
-  if NCurrent>=0 then
-    Result:= Format(' [%d/%d]', [NCurrent+1, NTotal])
+  FinderGetHiAllIndexes(AFinder, NIndex, NCount);
+  if NIndex>=0 then
+    Result:= Format(' [%d/%d]', [NIndex+1, NCount])
+  else if NCount>0 then
+    Result:= Format(' [?/%d]', [NCount]);
 end;
 
 procedure TfmMain.FinderShowResult(AFound, AIsReplace: boolean; AFinder: TATEditorFinder);
@@ -988,7 +1005,9 @@ begin
     MsgStatus(msgStatusFoundNextMatch+Details, true);
 
     AFinder.Editor.EndUpdate;
-    Application.ProcessMessages;
+
+    if not AFinder.OptDisableOnProgress then
+      Application.ProcessMessages;
 
     //not DoGotoPos, we may need to show marker, not caret
     AFinder.Editor.DoShowPos(
@@ -1236,10 +1255,17 @@ begin
       fmFind.UpdateInputFind(Str);
   end;
 
+  {
   //make command "find next" working with new text, issue #2803
   FFinder.StrFind:= Str;
   //and clear regex option (issue #2812)
   FFinder.OptRegex:= false;
+  }
+  //instead of above commented block, due to issue #5613, use this:
+  if FFinder.OptRegex then
+    FFinder.StrFind:= SEscapeRegexSpecialChars(Str)
+  else
+    FFinder.StrFind:= Str;
 
   if Assigned(fmFind) then
     if bHiAll then
@@ -1568,7 +1594,8 @@ begin
   FindDialogDone(
     nil, //skip dialog
     AppFinderOperationFromString(SAction),
-    false //'false' to solve issue #3303
+    false, //'false' to solve issue #3303
+    false
     );
   FinderOptionsFromString(FFinder, SOptOld);
 end;

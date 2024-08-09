@@ -17,8 +17,8 @@ uses
   ATSynEdit;
 
 const
-  cAppExeVersion = '1.215.0.3';
-  cAppApiVersion = 459;
+  cAppExeVersion = '1.216.1.0';
+  cAppApiVersion = 460;
 
 const
   cOptionSystemSuffix =
@@ -179,7 +179,7 @@ const
 
   msgPythonFindCaption: string = 'Find Python library';
   msgPythonFindCaptionLong = 'Python engine was not found; find it...';
-  msgPythonFindFromDir: string = 'Search from folder:';
+  msgPythonFindFromDir: string = 'Search for Python library in this folder and all its subfolders:';
   msgCannotFindPython: string = 'Cannot find Python library';
 
   msgCannotInitPythonDisabled: string = 'NOTE: Python engine is disabled';
@@ -318,7 +318,7 @@ const
   msgConfirmFileDeletedOutside: string = 'File was deleted outside:';
   msgConfirmReloadIt: string = 'Reload it?';
   msgConfirmReloadYes: string = 'Reload';
-  msgConfirmReloadNoMore: string = 'No more notifications';
+  msgConfirmReloadNoMore: string = ' × '; //'No more notifications';
   msgConfirmReloadItHotkeysSess: string = '(Yes: reopen. No: open text from previous session.)';
   msgConfirmOpenCreatedDoc: string = 'Open created document?';
   msgConfirmSaveColorsToFile: string = 'Save theme to file?';

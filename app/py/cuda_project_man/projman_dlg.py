@@ -37,7 +37,8 @@ def dialog_config(op):
     RES_CLOSE_EXT = 12
     RES_ICONS = 14
     RES_ICONS_TB = 16
-    RES_OK = 19
+    RES_SORT_ORDER = 18
+    RES_OK = 21
 
     themes = get_themes_filetype()
     try:
@@ -53,6 +54,25 @@ def dialog_config(op):
     except:
         theme_index_tb = -1
 
+    items_sort_id = [
+        'name',
+        'ext',
+        'size',
+        'size-',
+        'mtime',
+        'mtime-'
+        ]
+    items_sort_str = [
+        _('by name'),
+        _('by extension'),
+        _('by size'),
+        _('by size, descending'),
+        _('by date'),
+        _('by date, descending')
+        ]
+    s = op.get('sort_order', 'ext')
+    items_sort_val = items_sort_id.index(s if s in items_sort_id else 'ext')
+
     c1 = chr(1)
     text = '\n'.join([]
         +[c1.join(['type=label', 'pos=6,4,110,0', 'cap='+_('Ignore &files:')])]
@@ -63,7 +83,7 @@ def dialog_config(op):
 
         +[c1.join(['type=check', 'pos=6,62,500,84', 'cap='+_('Ignore all &hidden files/folders'),
           'val='+bool_to_str(op.get('no_hidden', True))])]
-        
+
         +[c1.join(['type=label', 'pos=6,88,500,0', 'cap='+_('&Recent projects:')])]
         +[c1.join(['type=memo', 'pos=6,104,500,180',
             'val='+'\t'.join(op.get('recent_projects', [])) ])]
@@ -92,8 +112,14 @@ def dialog_config(op):
             'val='+str(theme_index_tb)
             ])]
 
+        +[c1.join(['type=label', 'pos=6,470,130,0', 'cap='+_('Sorting order (*):')])]
+        +[c1.join(['type=combo_ro', 'pos=160,465,400,0',
+            'items='+'\t'.join(items_sort_str),
+            'val='+str(items_sort_val)
+            ])]
+
         +[c1.join(['type=label', 'pos=6,446,600,0', 'cap='+_('For more icons, get add-ons of kind "filetypeicons", "projtoolbaricons"')])]
-        +[c1.join(['type=label', 'pos=6,470,600,0', 'cap='+_('(*) - requires CudaText restart')])]
+        +[c1.join(['type=label', 'pos=6,505,600,0', 'cap='+_('(*) - requires CudaText restart')])]
         +[c1.join(['type=button', 'pos=300,500,400,0', 'cap='+_('&OK'), 'ex0=1'])]
         +[c1.join(['type=button', 'pos=406,500,502,0', 'cap='+_('Cancel')])]
     )
@@ -127,6 +153,10 @@ def dialog_config(op):
     index = int(res[RES_ICONS_TB])
     if index>=0:
         op['toolbar_theme'] = themes_tb[index]
+
+    index = int(res[RES_SORT_ORDER])
+    if index>=0:
+        op['sort_order'] = items_sort_id[index]
 
     return True
 

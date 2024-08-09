@@ -100,7 +100,8 @@ const
     );
 
 type
-  TAppFinderOperationEvent = procedure(Sender: TObject; Op: TAppFinderOperation; AUpdateEnabledAll: boolean) of object;
+  TAppFinderOperationEvent = procedure(Sender: TObject; Op: TAppFinderOperation;
+    AUpdateEnabledAll, ADocumentIsSmall: boolean) of object;
   TAppFinderGetEditor = procedure(out AEditor: TATSynEdit) of object;
   TAppFinderShowMatchesCount = procedure(AMatchCount, ATime: integer) of object;
   TAppFinderKeyDownEvent = function(AKey: word; AShiftState: TShiftState): boolean of object;
@@ -221,16 +222,22 @@ type
     FNarrow: boolean;
     FInputChanged: boolean;
     FInputColored: boolean;
+    FForViewer: boolean;
+    FDocumentIsSmall: boolean;
     FOnResult: TAppFinderOperationEvent;
     FOnChangeVisible: TNotifyEvent;
     FOnChangeOptions: TNotifyEvent;
     FOnFocusEditor: TNotifyEvent;
     FOnGetMainEditor: TAppFinderGetEditor;
+    FOnResetSearchString: TNotifyEvent;
     FOnGetToken: TATFinderGetToken;
     FOnShowMatchesCount: TAppFinderShowMatchesCount;
     FOnHandleKeyDown: TAppFinderKeyDownEvent;
+    FCaptionFind: string;
+    FCaptionReplace: string;
     FLexerRegexThemed: boolean;
     FHiAllEnableFindNext: boolean;
+    FInitialCaretPos: TPoint;
     Adapter: TATAdapterEControl;
     AdapterActive: boolean;
     procedure bRepStopClick(Sender: TObject);
@@ -258,17 +265,14 @@ type
     function CurrentCaption: string;
   public
     { public declarations }
-    FCaptionFind: string;
-    FCaptionReplace: string;
-    FInitialCaretPos: TPoint;
-    FForViewer: boolean;
+    property ForViewer: boolean read FForViewer write FForViewer;
     procedure Localize;
     procedure DoOnChange;
     procedure UpdateFormHeight;
-    procedure UpdateInitialCaretPos;
+    procedure UpdateCaretPosVar;
     procedure UpdateState(AEnableFindNextForHiOption: boolean);
-    procedure UpdateFonts;
     procedure UpdateFocus(AFindMode: boolean);
+    procedure UpdateInputFieldsProps;
     procedure UpdateInputFind(const AText: UnicodeString);
     procedure UpdateInputReplace(const AText: UnicodeString);
     procedure UpdateCaption(const AText: string);
@@ -281,6 +285,7 @@ type
     property OnChangeVisible: TNotifyEvent read FOnChangeVisible write FOnChangeVisible;
     property OnFocusEditor: TNotifyEvent read FOnFocusEditor write FOnFocusEditor;
     property OnGetMainEditor: TAppFinderGetEditor read FOnGetMainEditor write FOnGetMainEditor;
+    property OnResetSearchString: TNotifyEvent read FOnResetSearchString write FOnResetSearchString;
     property OnGetToken: TATFinderGetToken read FOnGetToken write FOnGetToken;
     property OnShowMatchesCount: TAppFinderShowMatchesCount read FOnShowMatchesCount write FOnShowMatchesCount;
     property OnHandleKeyDown: TAppFinderKeyDownEvent read FOnHandleKeyDown write FOnHandleKeyDown;
@@ -798,8 +803,14 @@ procedure TfmFind.edFindChange(Sender: TObject);
 var
   Ed: TATSynEdit;
 begin
-  if chkImmediate.Checked then
+  FDocumentIsSmall:= false;
+
+  if IsImmediate then
+  begin
     FInputChanged:= true;
+    if Assigned(FOnResetSearchString) then
+      FOnResetSearchString(nil);
+  end;
 
   {
   Look at how your browser works (Firefox). Cuda should behave the same.
@@ -816,7 +827,8 @@ begin
     begin
       OnGetMainEditor(Ed);
       if Ed=nil then exit;
-      if EditorSizeIsSmall(Ed) then
+      FDocumentIsSmall:= EditorSizeIsSmall(Ed);
+      if FDocumentIsSmall then
         TimerHiAllTick(Self)
       else
       begin
@@ -1018,9 +1030,9 @@ begin
 end;
 
 
-procedure TfmFind.UpdateFonts;
+procedure TfmFind.UpdateInputFieldsProps;
   //
-  procedure UpdateEdFont(Ed: TATSynEdit);
+  procedure UpdateEdProps(Ed: TATSynEdit);
   begin
     Ed.Font.Name:= EditorOps.OpFontName;
     Ed.Font.Size:= EditorOps.OpFontSize;
@@ -1035,9 +1047,8 @@ procedure TfmFind.UpdateFonts;
   end;
   //
 begin
-  UpdateEdFont(edFind);
-  UpdateEdFont(edRep);
-  //bCancel.Font.Assign(LabelFind.Font);
+  UpdateEdProps(edFind);
+  UpdateEdProps(edRep);
 end;
 
 procedure TfmFind.UpdateFocus(AFindMode: boolean);
@@ -1143,7 +1154,7 @@ begin
     exit
   end;
 
-  if Str=UiOps.HotkeyFindDialog then
+  if Str=ShortcutToTextRaw(AppKeymapMain.GetShortcutFromCommand(cmd_DialogFind)) then
   begin
     //ST4 and VSCode both stay in the Find dlg on pressing Ctrl+F
     if IsReplace then
@@ -1158,7 +1169,7 @@ begin
     exit;
   end;
 
-  if Str=UiOps.HotkeyReplaceDialog then
+  if Str=ShortcutToTextRaw(AppKeymapMain.GetShortcutFromCommand(cmd_DialogReplace)) then
   begin
     //ST4 and VSCode both stay in the Replace dlg on pressing Ctrl+H
     if not IsReplace then
@@ -1389,7 +1400,7 @@ begin
   EditorCaretShapeFromString(edRep.CaretShapeOverwrite, EditorOps.OpCaretViewOverwrite);
 
   UpdateFormHeight;
-  UpdateFonts;
+  UpdateInputFieldsProps;
   FixFormPositionToDesktop(Self);
   OnResize(Self);
 
@@ -1400,7 +1411,7 @@ begin
   UpdateState(false);
 end;
 
-procedure TfmFind.UpdateInitialCaretPos;
+procedure TfmFind.UpdateCaretPosVar;
 //should be called on dlg creation + on each dialog activation,
 //like in Sublime
 var
@@ -1431,7 +1442,7 @@ begin
     UpdateState(false);
 
   if Assigned(FOnResult) then
-    FOnResult(Self, Op, AUpdateEnabledAll);
+    FOnResult(Self, Op, AUpdateEnabledAll, FDocumentIsSmall);
 
   if Op<>TAppFinderOperation.CloseDlg then
   begin
@@ -1482,7 +1493,9 @@ begin
     if NewColor=clNone then exit;
     edFind.Colors.TextBG:= NewColor;
     edFind.Update;
-    Application.ProcessMessages;
+
+    if not FDocumentIsSmall then
+      Application.ProcessMessages;
 
     if FTimerWrapped=nil then
     begin

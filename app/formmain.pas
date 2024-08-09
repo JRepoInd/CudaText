@@ -444,6 +444,7 @@ type
     mnuTextSep2: TMenuItem;
     mnuTextSel: TMenuItem;
     mnuTextGotoDef: TMenuItem;
+    mnuTextSepUrl: TMenuItem;
     TimerMouseStop: TTimer;
     TimerStatusWork: TTimer;
     TimerAppIdle: TIdleTimer;
@@ -725,6 +726,8 @@ type
     FLastDirOfOpenDlg: string;
     FLastLexerForPluginsMenu: string;
     FLastStatusbarMessage: string;
+    FLastStatusbarMessageIsFoundIndexes: boolean;
+    FLastStatusbarMessageTick: QWord;
     FLastSelectedCommand: integer;
     FLastMousePos: TPoint;
     FLastMaximized: boolean;
@@ -749,6 +752,7 @@ type
     FCmdlineFileCount: integer;
     FPrevJsonObj: TJSONData;
     FPrevFramesEditState: array of TFrameEditState;
+    FPrevFindDlgVisible: boolean;
 
     function CodeTreeFilter_OnFilterNode(ItemNode: TTreeNode; out Done: Boolean): Boolean;
     function ConfirmAllFramesAreSaved(AWithCancel: boolean): boolean;
@@ -860,6 +864,7 @@ type
     procedure DoCodetree_PanelOnEnter(Sender: TObject);
     procedure DoCodetree_StopUpdate;
     procedure DoCodetree_OnContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
+    procedure DoCodetree_OnCollapsedOrExpanded(Sender: TObject; Node: TTreeNode);
     procedure DoCodetree_GetSyntaxRange(ANode: TTreeNode; out APosBegin, APosEnd: TPoint);
     procedure DoCodetree_SetSyntaxRange(ANode: TTreeNode; const APosBegin, APosEnd: TPoint);
     procedure DoCodetree_OnClick(Sender: TObject);
@@ -986,7 +991,6 @@ type
     procedure MsgStatus(AText: string; AFinderMessage: boolean=false);
     procedure MsgStatusErrorInRegex;
     procedure MsgStatusFileOpened(const AFileName1, AFileName2: string);
-    function GetStatusbarPrefix(Frame: TEditorFrame): string;
     procedure SearcherDirectoryEnter(FileIterator: TFileIterator);
     procedure SetShowFloatGroup1(AValue: boolean);
     procedure SetShowFloatGroup2(AValue: boolean);
@@ -1204,6 +1208,7 @@ type
     CodeTree: TAppTreeContainer;
     CodeTreeFilter: TTreeFilterEdit;
     CodeTreeFilterInput: TATComboEdit;
+    CodeTree_CurrentNode: TTreeNode;
     PanelCodeTreeAll: TFormDummy;
     PanelCodeTreeTop: TPanel;
     StatusProgress: TATGauge;
@@ -1241,10 +1246,11 @@ type
     function RunTreeHelper(Frame: TEditorFrame; ATree: TTreeView;
       AllowPascalHelpers, AllowPythonHelpers: boolean): boolean;
     function DoPyLexerDetection(const Filename: string; Lexers: TStringList): integer;
-    procedure FindDialogDone(Sender: TObject; Res: TAppFinderOperation; AEnableUpdateAll: boolean);
-    procedure FindDialogDone2(Sender: TObject; Res: TAppFinderOperation; AEnableUpdateAll: boolean);
+    procedure FindDialogDone(Sender: TObject; Res: TAppFinderOperation; AEnableUpdateAll, ADocumentIsSmall: boolean);
+    procedure FindDialogDone2(Sender: TObject; Res: TAppFinderOperation; AEnableUpdateAll, ADocumentIsSmall: boolean);
     procedure FindDialogOnFocusEditor(Sender: TObject);
     procedure FindDialogOnGetMainEditor(out AEditor: TATSynEdit);
+    procedure FindDialogOnResetSearchString(Sender: TObject);
     procedure FindDialogOnChangeOptions(Sender: TObject);
     procedure FindDialogOnChangeVisible(Sender: TObject);
     procedure FindDialogOnShowMatchesCount(AMatchCount, ATime: integer);
@@ -2011,7 +2017,7 @@ begin
   F:= CurrentFrame;
   if F=nil then exit;
   if F.FrameKind<>TAppFrameKind.BinaryViewer then exit;
-  F.Binary.Mode:= TATBinHexMode((Sender as TComponent).Tag);
+  F.Viewer.Mode:= TATBinHexMode((Sender as TComponent).Tag);
   UpdateStatusbar;
 end;
 
@@ -2301,7 +2307,7 @@ begin
         case Frame.FrameKind of
           TAppFrameKind.BinaryViewer:
             begin
-              if Frame.Binary.TextWrap then
+              if Frame.Viewer.TextWrap then
                 WrapMode:= TATEditorWrapMode.ModeOn
               else
                 WrapMode:= TATEditorWrapMode.ModeOff;
@@ -2389,7 +2395,7 @@ begin
       StatusbarTag_Enc:
         begin
           with Mouse.CursorPos do
-            Frame.Binary.TextEncodingsMenu(X, Y);
+            Frame.Viewer.TextEncodingsMenu(X, Y);
         end;
       StatusbarTag_Lexer:
         begin
@@ -2398,7 +2404,7 @@ begin
         end;
       StatusbarTag_WrapMode:
         begin
-          Frame.Binary.TextWrap:= not Frame.Binary.TextWrap;
+          Frame.Viewer.TextWrap:= not Frame.Viewer.TextWrap;
           UpdateStatusbar;
           UpdateMenuChecks_Frame(Frame);
         end;
@@ -2738,6 +2744,7 @@ begin
 
   if CodeTree.Tree.Items.Count>0 then
   begin
+    DoPyEvent_AppState(APPSTATE_CODETREE_BEFORE_CLEAR);
     CodeTree.Tree.Items.Clear;
     DoCodetree_UpdateVersion(nil);
     AppCodetreeState.NeedsSelJump:= false;
@@ -2745,6 +2752,12 @@ begin
   end;
 end;
 
+procedure TfmMain.DoCodetree_OnCollapsedOrExpanded(Sender: TObject; Node: TTreeNode);
+begin
+  CodeTree_CurrentNode:= Node;
+  DoPyEvent_AppState(APPSTATE_CODETREE_FOLDED_UNFOLDED);
+  CodeTree_CurrentNode:= nil;
+end;
 
 procedure TfmMain.DoCodetree_OnMouseMove(Sender: TObject; Shift: TShiftState; X,
   Y: Integer);
@@ -2807,6 +2820,8 @@ begin
   CodeTree.Tree.OnKeyDown:= @DoCodetree_OnKeyDown;
   CodeTree.Tree.OnContextPopup:= @DoCodetree_OnContextPopup;
   CodeTree.Tree.OnAdvancedCustomDrawItem:=@DoCodetree_OnAdvDrawItem;
+  CodeTree.Tree.OnCollapsed:= @DoCodetree_OnCollapsedOrExpanded;
+  CodeTree.Tree.OnExpanded:= @DoCodetree_OnCollapsedOrExpanded;
 
   PanelCodeTreeTop:= TPanel.Create(PanelCodeTreeAll);
   PanelCodeTreeTop.Name:= 'PanelCodeTreeTop';
@@ -3234,6 +3249,14 @@ begin
       F.Editor.Update;
   end;
 
+  (*
+  {$if defined(LCLQt5) or defined(LCLQt6)}
+  //workaround for issue https://gitlab.com/freepascal.org/lazarus/lazarus/-/issues/40933
+  if FPrevFindDlgVisible and Assigned(fmFind) and not fmFind.Visible then
+    fmFind.Show;
+  {$ifend}
+  *)
+
   DoPyEvent_AppActivate(TAppPyEvent.OnAppActivate);
 end;
 
@@ -3252,6 +3275,15 @@ begin
   //it was needed when autocomplete was non-docked window, to hide autocomplete from Alt+Tab
   CloseFormAutoCompletion;
   }
+
+  (*
+  {$if defined(LCLQt5) or defined(LCLQt6)}
+  //workaround for issue https://gitlab.com/freepascal.org/lazarus/lazarus/-/issues/40933
+  FPrevFindDlgVisible:= Assigned(fmFind) and (fmFind.Parent=nil) and fmFind.Visible;
+  if FPrevFindDlgVisible then
+    fmFind.Close;
+  {$ifend}
+  *)
 
   DoPyEvent_AppActivate(TAppPyEvent.OnAppDeactivate);
 end;
@@ -3989,6 +4021,29 @@ begin
   UpdateMenuRecent(Sender as TATSynEdit);
 end;
 
+procedure _StatusbarReplaceFoundIndexWithQuestionMark(AStatusBar: TATStatus);
+var
+  NPanel, N, NTo: integer;
+  S: string;
+begin
+  NPanel:= AStatusBar.FindPanel(StatusbarTag_Msg);
+  if NPanel>=0 then
+  begin
+    S:= AStatusBar.Captions[NPanel];
+    N:= Pos('[', S);
+    if (N>0) and (Pos(']', S, N)>0) then
+    begin
+      Inc(N);
+      NTo:= N;
+      while (NTo+1<=Length(S)) and IsCharDigit(S[NTo+1]) do Inc(NTo);
+      Delete(S, N, NTo-N+1);
+      Insert('?', S, N);
+      AStatusBar.Captions[NPanel]:= S;
+      AStatusBar.Invalidate;
+    end;
+  end;
+end;
+
 procedure TfmMain.FrameOnEditorChangeCaretPos(Sender: TObject);
 var
   Ed: TATSynEdit;
@@ -4003,6 +4058,14 @@ begin
     Caret:= Ed.Carets[0];
     if (FLastTooltipLine>=0) and (Caret.PosY<>FLastTooltipLine) then
       DoTooltipHide;
+  end;
+
+  //on caret move, replace statusbar msg 'Found next match .. [12/34]' with 'Found next match .. [?/34]'
+  if FLastStatusbarMessageIsFoundIndexes and
+     (GetTickCount64-FLastStatusbarMessageTick>UiOps.FindStatusbarDelayToReplaceIndexToQuestion) then
+  begin
+    FLastStatusbarMessageIsFoundIndexes:= false;
+    _StatusbarReplaceFoundIndexWithQuestionMark(Status);
   end;
 end;
 
@@ -4026,6 +4089,8 @@ begin
 
     FFinder.Editor:= Ed;
     FFinder.StrFind:= fmFind.edFind.Text;
+    FFinder.OptDisableOnProgress:= false;
+
     Ed.Attribs.DeleteWithTag(UiOps.FindHiAll_TagValue);
     EditorHighlightAllMatches(
       FFinder,
@@ -4419,10 +4484,10 @@ begin
       F.Ed2.DoubleBuffered:= UiOps.DoubleBuffered;
       F.Ed1.Font.Size:= EditorOps.OpFontSize;
       F.Ed2.Font.Size:= EditorOps.OpFontSize;
-      if Assigned(F.Binary) then
+      if Assigned(F.Viewer) then
       begin
-        F.Binary.DoubleBuffered:= UiOps.DoubleBuffered;
-        F.Binary.Font.Size:= EditorOps.OpFontSize;
+        F.Viewer.DoubleBuffered:= UiOps.DoubleBuffered;
+        F.Viewer.Font.Size:= EditorOps.OpFontSize;
       end;
     end;
 
@@ -5416,7 +5481,7 @@ begin
   case Frame.FrameKind of
     TAppFrameKind.BinaryViewer:
     begin
-      if ViewerGotoFromString(Frame.Binary, AInput) then
+      if ViewerGotoFromString(Frame.Viewer, AInput) then
         MsgStatus('')
       else
         MsgStatus(msgStatusBadLineNum);
@@ -6012,21 +6077,22 @@ begin
   end;
 end;
 
-function TfmMain.GetStatusbarPrefix(Frame: TEditorFrame): string;
-begin
-  Result:= '';
-  if Frame=nil then exit;
-  if Frame.FrameKind=TAppFrameKind.Editor then
-  begin
-    //if Frame.ReadOnly[Frame.Editor] then
-    //  Result+= msgStatusReadonly+' ';
-
-    //if Frame.MacroRecord then
-    //  Result+= msgStatusMacroRec+' ';
-  end;
-end;
-
 procedure TfmMain.MsgStatus(AText: string; AFinderMessage: boolean=false);
+  //
+  function IsBracketsIndexes(const S: string): boolean;
+  var
+    N1, N2, N3: integer;
+  begin
+    Result:= false;
+    N1:= Pos('[', S);
+    if N1=0 then exit;
+    N2:= Pos('/', S, N1);
+    if N2=0 then exit;
+    N3:= Pos(']', S, N2);
+    if N3=0 then exit;
+    Result:= true;
+  end;
+  //
 var
   STime, SLine: string;
 begin
@@ -6050,12 +6116,18 @@ begin
       AppStatusbarMessages.Delete(0);
     FLastStatusbarMessage:= AText;
 
-    DoStatusbarTextByTag(Status, StatusbarTag_Msg, {STime+}GetStatusbarPrefix(CurrentFrame)+AText);
+    DoStatusbarTextByTag(Status, StatusbarTag_Msg, AText);
     DoStatusbarColorByTag(Status, StatusbarTag_Msg, GetAppColorOfStatusbarFont);
     DoStatusbarHintByTag(Status, StatusbarTag_Msg, StringsTrailingText(AppStatusbarMessages, UiOps.MaxStatusbarMessages));
 
     TimerStatusClear.Enabled:= false;
     TimerStatusClear.Enabled:= true;
+
+    FLastStatusbarMessageTick:= GetTickCount64;
+    FLastStatusbarMessageIsFoundIndexes:=
+      AFinderMessage and
+      SBeginsWith(AText, msgStatusFoundNextMatch) and
+      IsBracketsIndexes(AText);
   end;
 
   if AFinderMessage then
@@ -6301,21 +6373,26 @@ begin
     exit;
   end;
 
-  if Ed.Modified and UiOps.ReloadUnsavedConfirm then
-    if MsgBox(
-      Format(msgConfirmReopenModifiedTab, [AppCollapseHomeDirInFilename(fn)]),
-      MB_OKCANCEL or MB_ICONQUESTION
-      ) <> ID_OK then exit;
+  if F.FrameKind=TAppFrameKind.Editor then
+  begin
+    if Ed.Modified and UiOps.ReloadUnsavedConfirm then
+      if MsgBox(
+        Format(msgConfirmReopenModifiedTab, [AppCollapseHomeDirInFilename(fn)]),
+        MB_OKCANCEL or MB_ICONQUESTION
+        ) <> ID_OK then exit;
 
-  bChangedRO:= TATEditorModifiedOption.ReadOnly in Ed.ModifiedOptions;
-  bPrevRO:= F.ReadOnly[Ed];
-  PrevLexer:= F.LexerName[Ed];
-  F.ReadOnly[Ed]:= false;
-  F.DoFileReload(Ed);
-  F.LexerName[Ed]:= PrevLexer;
-  if bChangedRO then
-    F.ReadOnly[Ed]:= bPrevRO;
-  Ed.Modified:= false;
+    bChangedRO:= TATEditorModifiedOption.ReadOnly in Ed.ModifiedOptions;
+    bPrevRO:= F.ReadOnly[Ed];
+    PrevLexer:= F.LexerName[Ed];
+    F.ReadOnly[Ed]:= false;
+    F.DoFileReload(Ed);
+    F.LexerName[Ed]:= PrevLexer;
+    if bChangedRO then
+      F.ReadOnly[Ed]:= bPrevRO;
+    Ed.Modified:= false;
+  end
+  else
+    F.DoFileReload(Ed);
 
   UpdateStatusbar;
   MsgStatus(msgStatusReopened+' '+ExtractFileName(fn));
@@ -7217,7 +7294,11 @@ begin
   Caret:= Ed.Carets[0];
 
   //disable completion in comments/strings
-  if DoAutoComplete_PosOnBadToken(Ed, Caret.PosX, Caret.PosY) then exit;
+  if DoAutoComplete_PosOnBadToken(Ed, Caret.PosX, Caret.PosY) then
+  begin
+    MsgStatus('Auto-completion doesn''t work inside comments/strings');
+    exit;
+  end;
 
   CompletionOps.AppendOpeningBracket:= Ed.OptAutocompleteAddOpeningBracket;
   CompletionOps.UpDownAtEdge:= TATCompletionUpDownAtEdge(Ed.OptAutocompleteUpDownAtEdge);
@@ -7228,6 +7309,7 @@ begin
   CompletionOps.CommandForShitchTab:= cmd_SwitchTab_HotkeyNext;
   CompletionOps.ShortcutForAutocomplete:= Ed.Keymap.GetShortcutFromCommand(cmd_AutoComplete);
   CompletionOps.ClosingTimerInverval:= UiOps.AutocompleteClosingDelay;
+  CompletionOps.ReplaceOnRight:= UiOps.AutocompleteReplaceOnRight;
 
   //auto-completion for file:///, before plugins
   if UiOps.AutocompleteFileURI and
@@ -8105,7 +8187,7 @@ begin
   UpdateMenuItemHotkey(mnuTextDelete, cCommand_TextDeleteSelection);
   UpdateMenuItemHotkey(mnuTextSel, cCommand_SelectAll);
   UpdateMenuItemHotkey(mnuTextGotoDef, cmd_GotoDefinition);
-  UpdateMenuItemHotkey(mnuTextOpenUrl, cmd_LinkAtCaret_Open);
+  UpdateMenuItemHotkey(mnuTextOpenUrl, cmd_LinkAtPopup_Open);
 
   Ed:= CurrentEditor;
 
@@ -8115,8 +8197,9 @@ begin
   if Assigned(mnuTextPaste) then
     mnuTextPaste.Enabled:= not Ed.ModeReadOnly and Clipboard.HasFormat(CF_Text);
 
+  //auto hide 'Delete' to make other menuitems closer to cursor
   if Assigned(mnuTextDelete) then
-    mnuTextDelete.Enabled:= not Ed.ModeReadOnly and Ed.Carets.IsSelection;
+    mnuTextDelete.Visible:= not Ed.ModeReadOnly and Ed.Carets.IsSelection;
 
   if Assigned(mnuTextUndo) then
     mnuTextUndo.Enabled:= not Ed.ModeReadOnly and (Ed.UndoCount>0);
@@ -8125,7 +8208,12 @@ begin
     mnuTextRedo.Enabled:= not Ed.ModeReadOnly and (Ed.RedoCount>0);
 
   if Assigned(mnuTextOpenUrl) then
-    mnuTextOpenUrl.Enabled:= EditorGetLinkAtCaret(Ed)<>'';
+  begin
+    //'Open URL' item is on top, so auto hide it
+    mnuTextOpenUrl.Visible:= EditorGetLinkAtScreenCoord(Ed, PopupText.PopupPoint)<>'';
+    if Assigned(mnuTextSepUrl) then
+      mnuTextSepUrl.Visible:= mnuTextOpenUrl.Visible;
+  end;
 end;
 
 
@@ -9438,6 +9526,17 @@ begin
   AEditor:= CurrentEditor;
 end;
 
+procedure TfmMain.FindDialogOnResetSearchString(Sender: TObject);
+var
+  F: TEditorFrame;
+begin
+  F:= CurrentFrame;
+  if F=nil then exit;
+  if Assigned(F.Viewer) then
+    F.Viewer.ResetSearch;
+  FFindStop:= true;
+end;
+
 procedure TfmMain.PyStatusbarPanelClick(Sender: TObject; const ATag: Int64);
 var
   Bar: TATStatus;
@@ -9955,20 +10054,20 @@ begin
     exit;
   end;
 
-  if Ed.FileName='' then
+  if Frame.FileName='' then
   begin
     MsgStatus(msgCannotHandleUntitledTab);
     exit;
   end;
 
   //file is removed outside of app?
-  if not FileExists(Ed.FileName) then
+  if not FileExists(Frame.FileName) then
   begin
-    MsgStatus(msgCannotFindFile+' '+ExtractFileName(Ed.FileName));
+    MsgStatus(msgCannotFindFile+' '+ExtractFileName(Frame.FileName));
     exit;
   end;
 
-  if DoDialogRenameFile(Ed.FileName, NewFileName, @HandleRenameCheckAllowed) then
+  if DoDialogRenameFile(Frame.FileName, NewFileName, @HandleRenameCheckAllowed) then
   begin
     Frame.SetFileName(Ed, NewFileName);
     Frame.UpdateCaptionFromFilename;

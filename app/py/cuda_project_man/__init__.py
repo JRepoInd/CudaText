@@ -37,6 +37,7 @@ PROJECT_UNSAVED_NAME = _("(Unsaved project)")
 PROJECT_TEMP_FILENAME = os.path.join(app_path(APP_DIR_SETTINGS), 'temporary'+PROJECT_EXTENSION)
 NODE_PROJECT, NODE_DIR, NODE_FILE, NODE_BAD = range(4)
 global_project_info = {}
+sort_order = 'ext'
 
 def is_session_name(s):
     allowed = string.ascii_letters+string.digits+'., ()-+_$%='
@@ -272,6 +273,7 @@ class Command:
         "preview": True,
         "d_click": False,
         "goto_open": False,
+        "sort_order": "ext",
     }
 
     tree = None
@@ -471,13 +473,34 @@ class Command:
 
     @staticmethod
     def node_ordering_direntry(path):
-        # node_ordering() for DirEntry
+        # node_ordering() for os.DirEntry and pathlib.Path
         isfile = path.is_file()
-        if isfile:
-            ext = _file_ext(path.name).upper()
+        global sort_order
+        if sort_order=='ext':
+            if isfile:
+                key = _file_ext(path.name).upper()
+            else:
+                key = ''
+        elif sort_order=='name':
+            key = path.name.upper()
+        elif sort_order=='size':
+            if isfile:
+                key = -path.stat().st_size
+            else:
+                key = ''
+        elif sort_order=='size-':
+            if isfile:
+                key = path.stat().st_size
+            else:
+                key = ''
+        elif sort_order=='mtime':
+            key = -path.stat().st_mtime
+        elif sort_order=='mtime-':
+            key = path.stat().st_mtime
         else:
-            ext = ''
-        return isfile, ext, path.name.upper()
+            raise ValueError('Unknown sort_order: '+sort_order)
+
+        return isfile, key, path.name.upper()
 
     def add_node(self, path):
         if path:
@@ -922,6 +945,9 @@ class Command:
 
     def action_refresh_int(self, parent=None):
 
+        global sort_order
+        sort_order = self.options.get('sort_order', 'ext')
+
         unfold = parent is None
         if parent is None:
             # clear tree
@@ -942,6 +968,7 @@ class Command:
             tree_proc(self.tree, TREE_ITEM_SELECT, items_root[0][0])
 
             nodes = map(Path, self.project["nodes"])
+            nodes = sorted(nodes, key=Command.node_ordering_direntry)
         else:
             fn = str(self.get_location_by_index(parent)) # str() is required for old Python 3.5 for os.scandir()
             if not fn: return

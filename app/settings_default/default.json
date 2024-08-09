@@ -628,12 +628,13 @@
   //  if "X" in value: Whitespace also in selection (works together with "l", "t")
   //  if "l" in value: Whitespace only leading+trailing, ie at begin/end of lines (overrides "t")
   //  if "t" in value: Whitespace only trailing, ie at end of lines
-  //  if "T" in value: Show all tab-chars (overrides "x", "X", "l", "t")
+  //  if "T" in value: Force show all tab-chars (overrides "x", "X", "l", "t")
   //  if "e" in value: Show end-of-lines marks
   //  if "E" in value: Show end-of-lines marks only for wrapped line parts (needs "e")
-  //  if "d" in value: Detailed end-of-lines marks: "LF", "CRLF", "CR" (overrides ".")
-  //  if "." in value: Instead of arrows at end-of-lines, show thick dots (overrides "p")
   //  if "p" in value: Instead of arrows at end-of-lines, show pilcrow chars
+  //  if "." in value: Instead of arrows at end-of-lines, show thick dots (overrides "p")
+  //  if "d" in value: Detailed end-of-lines marks: "LF", "CRLF", "CR" (overrides ".")
+  //Note: GUI dialog "Options / Unprinted chars..." helps to change this option.
   "unprinted_content": "se",
 
   //Unprinted symbols: Replace control ASCII characters (codes 0..31) with replacement-char.
@@ -1553,6 +1554,9 @@
   //when you press Left/Right arrows with LSP listbox).
   "autocomplete_closing_delay": 300,
 
+  //If false, auto-completion will not replace nearest word-chars on the right of the caret.
+  "autocomplete_replace_on_right": true,
+
   //Auto-pair some chars on typing.
   //Value must have some of supported chars without spaces:
   //  ( [ { < ' " ` ~ * #
@@ -1573,7 +1577,7 @@
 
   //Regular expression, which finds hyperlinks.
   //Current value finds http://, https://, ftp:// links and e-mails (with optional mailto: ).
-  "links_regex": "\\b(mailto:)?\\w[\\w\\-\\+\\.]*@\\w[\\w\\-\\.]*\\.\\w{2,}\\b|\\b(https?://|ftp://)\\w[\\w\\-\\.@]*(:\\d+)?(/([~\\w\\.\\-\\+/%@!%:&\\*=\\(\\[\\{\\|,;\\$]|([\\)\\]\\}'\"`](?![\\x20\\x09\\x0A\\x0D.,;:]))|\\(.*?\\))*)?(\\?\\S*[\\w/\\-\\+\\*])?(\\#[\\w\\-\\./%:!]*)?",
+  "links_regex": "\\b(mailto:)?\\w[\\w\\-\\+\\.]*@\\w[\\w\\-\\.]*\\.\\w{2,}\\b|\\b(https?://|ftp://)\\w[\\w\\-\\.@]*(:\\d+)?(/([~\\w\\.\\-\\+/%@!%:&\\*=\\(\\[\\{\\|,;\\$]|([\\)\\]\\}'\"`](?![\\x20\\x09\\x0A\\x0D.,;:]))|\\(.*?\\))*)?(\\?[^\\s\"'<>]*[\\w/\\-\\+\\*])?(\\#[\\w\\-\\./%:!]*)?",
 
   //[File]
   //Maximal file size, allowed to open, in Mb.
@@ -1656,9 +1660,8 @@
   "ui_bottom_on_start": 0,
 
   //[Find/Hotkeys]
-  //Hotkeys in Find/Replace dialog.
-  "find_hotkey_find_dlg": "Ctrl+F",
-  "find_hotkey_replace_dlg": "Ctrl+R",
+  //Hotkeys in the Find/Replace dialog. They work only when Find/Replace dialog is focused.
+  //These hotkeys cannot be combo (ie 2 sequental hotkeys).
   "find_hotkey_find_first": "Alt+Enter",
   "find_hotkey_find_next": "F3",
   "find_hotkey_find_prev": "Shift+Enter",

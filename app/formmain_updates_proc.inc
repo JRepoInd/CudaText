@@ -130,7 +130,7 @@ begin
         bEditor:= false;
         bEditable:= false;
         bBinViewer:= true;
-        bShowNonPrinted:= F.Binary.TextNonPrintable;
+        bShowNonPrinted:= F.Viewer.TextNonPrintable;
       end;
     TAppFrameKind.ImageViewer:
       begin
@@ -212,7 +212,7 @@ begin
   begin
     case FrameKind of
       TAppFrameKind.BinaryViewer:
-        S:= IntToStr(F.Binary.PosPercent)+'%';
+        S:= IntToStr(F.Viewer.PosPercent)+'%';
       else
         S:= '';
     end;
@@ -221,10 +221,10 @@ begin
     case FrameKind of
       TAppFrameKind.BinaryViewer:
       begin
-        if F.Binary.TextEncoding=eidUTF8 then
+        if F.Viewer.TextEncoding=eidUTF8 then
           S:= cEncNameUtf8_NoBom
         else
-          S:= cEncConvNames[F.Binary.TextEncoding];
+          S:= cEncConvNames[F.Viewer.TextEncoding];
       end
       else
         S:= '';
@@ -235,7 +235,7 @@ begin
 
     case FrameKind of
       TAppFrameKind.BinaryViewer:
-        S:= msgViewer+': '+msgViewerModes[F.Binary.Mode];
+        S:= msgViewer+': '+msgViewerModes[F.Viewer.Mode];
       TAppFrameKind.ImageViewer:
         begin
           Size:= F.PictureSizes;
@@ -257,7 +257,7 @@ begin
     {
     case FrameKind of
       TAppFrameKind.BinaryViewer:
-        S:= msgStatusbarWrapStates[Ord(F.Binary.TextWrap)]
+        S:= msgStatusbarWrapStates[Ord(F.Viewer.TextWrap)]
       else
         S:= '';
     end;
@@ -328,7 +328,7 @@ begin
   DoStatusbarTextByTag(AStatus, StatusbarTag_Zoom, IntToStr(N)+'%');
 
   //to update '[Read only]' in the message
-  DoStatusbarTextByTag(AStatus, StatusbarTag_Msg, GetStatusbarPrefix(F)+FLastStatusbarMessage);
+  //DoStatusbarTextByTag(AStatus, StatusbarTag_Msg, FLastStatusbarMessage);
 end;
 
 procedure TfmMain.InitStatusProgress;
@@ -454,8 +454,11 @@ begin
     FFindStop:= false;
     FFindConfirmAll:= mrNone;
     InitButtonCancel;
-    ButtonCancel.Show;
-    UpdateGlobalProgressbar(0, true);
+    if not FFinder.OptDisableOnProgress then
+    begin
+      ButtonCancel.Show;
+      UpdateGlobalProgressbar(0, true);
+    end;
     if AUpdateEnableAll then
       UpdateEnabledAll(false);
     if AEdLock then
@@ -537,12 +540,12 @@ begin
     if F.Splitted then
       F.Ed2.Update;
 
-    if (F.FrameKind=TAppFrameKind.BinaryViewer) and Assigned(F.Binary) then
+    if (F.FrameKind=TAppFrameKind.BinaryViewer) and Assigned(F.Viewer) then
     begin
-      F.Binary.Font.Name:= EditorOps.OpFontName;
-      F.Binary.Font.Size:= EditorOps.OpFontSize;
-      F.Binary.Font.Quality:= EditorOps.OpFontQuality;
-      F.Binary.Invalidate;
+      F.Viewer.Font.Name:= EditorOps.OpFontName;
+      F.Viewer.Font.Size:= EditorOps.OpFontSize;
+      F.Viewer.Font.Quality:= EditorOps.OpFontQuality;
+      F.Viewer.Invalidate;
     end;
 
     {
@@ -554,7 +557,7 @@ begin
   end;
 
   if Assigned(fmFind) then
-    fmFind.UpdateFonts;
+    fmFind.UpdateInputFieldsProps;
 
   fmValidate.Ed.Font.Name:= EditorOps.OpFontName;
   fmValidate.Ed.Font.Size:= EditorOps.OpFontSize;
@@ -601,7 +604,7 @@ begin
   ATFlatTheme.ScaleFontPercents:= ATEditorScaleFontPercents;
 
   if Assigned(fmFind) then
-    fmFind.UpdateFonts;
+    fmFind.UpdateInputFieldsProps;
 
   DoApplyFont_UiStatusbar;
 end;
@@ -1115,23 +1118,49 @@ end;
 procedure TfmMain.UpdateMenuChecks_Frame(F: TEditorFrame);
 var
   Ed: TATSynEdit;
+  bEditor, bBinary, bPicture: boolean;
 begin
   if F=nil then exit;
   Ed:= F.Editor;
 
-  if Assigned(mnuFileReopen) then
-    mnuFileReopen.Enabled:= Ed.FileName<>'';
-  if Assigned(mnuFileRename) then
-    mnuFileRename.Enabled:= Ed.FileName<>'';
-  if Assigned(mnuFileCloseDel) then
-    mnuFileCloseDel.Enabled:= Ed.FileName<>'';
+  bEditor:= F.FrameKind=TAppFrameKind.Editor;
+  bBinary:= F.FrameKind=TAppFrameKind.BinaryViewer;
+  bPicture:= F.FrameKind=TAppFrameKind.ImageViewer;
 
-  UpdateMenuItemChecked(mnuViewWrap, mnuViewWrap_Alt, F.WordWrap<>TATEditorWrapMode.ModeOff);
-  UpdateMenuItemChecked(mnuViewNums, mnuViewNums_Alt, Ed.Gutter.Items[Ed.Gutter.FindIndexByTag(ATEditorOptions.GutterTagNumbers)].Visible);
-  UpdateMenuItemChecked(mnuViewFold, mnuViewFold_Alt, Ed.Gutter.Items[Ed.Gutter.FindIndexByTag(ATEditorOptions.GutterTagFolding)].Visible);
-  UpdateMenuItemChecked(mnuViewRuler, mnuViewRuler_Alt, Ed.OptRulerVisible);
-  UpdateMenuItemChecked(mnuViewMinimap, mnuViewMinimap_Alt, Ed.OptMinimapVisible);
-  UpdateMenuItemChecked(mnuViewMicromap, mnuViewMicromap_Alt, Ed.OptMicromapVisible);
+  if Assigned(mnuFileSave) then
+    mnuFileSave.Enabled:= bEditor;
+  if Assigned(mnuFileSaveAs) then
+    mnuFileSaveAs.Enabled:= bEditor;
+  if Assigned(mnuFileReopen) then
+    mnuFileReopen.Enabled:= (F.FileName<>'') and (bEditor or bPicture);
+  if Assigned(mnuFileRename) then
+    mnuFileRename.Enabled:= (F.FileName<>'') and (bEditor or bPicture);
+  if Assigned(mnuFileCloseDel) then
+    mnuFileCloseDel.Enabled:= (F.FileName<>'');
+
+  UpdateMenuItemChecked(mnuViewWrap, mnuViewWrap_Alt, (bEditor or bBinary) and (F.WordWrap<>TATEditorWrapMode.ModeOff));
+  UpdateMenuItemChecked(mnuViewNums, mnuViewNums_Alt, bEditor and Ed.Gutter.Items[Ed.Gutter.FindIndexByTag(ATEditorOptions.GutterTagNumbers)].Visible);
+  UpdateMenuItemChecked(mnuViewFold, mnuViewFold_Alt, bEditor and Ed.Gutter.Items[Ed.Gutter.FindIndexByTag(ATEditorOptions.GutterTagFolding)].Visible);
+  UpdateMenuItemChecked(mnuViewRuler, mnuViewRuler_Alt, bEditor and Ed.OptRulerVisible);
+  UpdateMenuItemChecked(mnuViewMinimap, mnuViewMinimap_Alt, bEditor and Ed.OptMinimapVisible);
+  UpdateMenuItemChecked(mnuViewMicromap, mnuViewMicromap_Alt, bEditor and Ed.OptMicromapVisible);
+
+  if Assigned(mnuViewWrap) then
+    mnuViewWrap.Enabled:= bEditor or bBinary;
+  if Assigned(mnuViewNums) then
+    mnuViewNums.Enabled:= bEditor;
+  if Assigned(mnuViewFold) then
+    mnuViewFold.Enabled:= bEditor;
+  if Assigned(mnuViewRuler) then
+    mnuViewRuler.Enabled:= bEditor;
+  if Assigned(mnuViewMinimap) then
+    mnuViewMinimap.Enabled:= bEditor;
+  if Assigned(mnuViewMicromap) then
+    mnuViewMicromap.Enabled:= bEditor;
+  if Assigned(mnuViewSplitSub) then
+    mnuViewSplitSub.Enabled:= bEditor;
+  if Assigned(mnuLexers) then
+    mnuLexers.Enabled:= bEditor;
 end;
 
 procedure TfmMain.UpdateMenuChecks_Global;

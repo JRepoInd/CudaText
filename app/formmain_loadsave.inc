@@ -393,7 +393,7 @@ begin
         TAppFrameKind.Editor:
           sTabKind:= '';
         TAppFrameKind.BinaryViewer:
-          sTabKind:= 'bin,'+IntToStr(Ord(Frame.Binary.Mode));
+          sTabKind:= 'bin,'+IntToStr(Ord(Frame.Viewer.Mode));
         TAppFrameKind.ImageViewer:
           sTabKind:= 'pic';
       end;
@@ -402,7 +402,7 @@ begin
       {
       //TODO: add together with restoring of 'v_pos'
       if Frame.IsBinary then
-        cfg.SetValue(path+'/v_pos', Frame.Binary.PosOffset)
+        cfg.SetValue(path+'/v_pos', Frame.Viewer.PosOffset)
       else
         cfg.DeleteValue(path+'/v_pos');
         }
@@ -1537,8 +1537,6 @@ begin
   UiOps.Emmet_TrimLineMarkers:= cfg.GetValue('emmet_trim_line_markers', UiOps.Emmet_TrimLineMarkers);
   UiOps.Emmet_WordWrap:= cfg.GetValue('emmet_word_wrap', UiOps.Emmet_WordWrap);
 
-  UiOps.HotkeyFindDialog:= cfg.GetValue('find_hotkey_find_dlg', UiOps.HotkeyFindDialog);
-  UiOps.HotkeyReplaceDialog:= cfg.GetValue('find_hotkey_replace_dlg', UiOps.HotkeyReplaceDialog);
   UiOps.HotkeyFindFirst:= cfg.GetValue('find_hotkey_find_first', UiOps.HotkeyFindFirst);
   UiOps.HotkeyFindNext:= cfg.GetValue('find_hotkey_find_next', UiOps.HotkeyFindNext);
   UiOps.HotkeyFindPrev:= cfg.GetValue('find_hotkey_find_prev', UiOps.HotkeyFindPrev);
@@ -1597,6 +1595,7 @@ begin
   UiOps.AutocompleteCss_Lexers:= cfg.GetValue('autocomplete_css_lexers', UiOps.AutocompleteCss_Lexers);
   UiOps.AutocompleteFileURI:= cfg.GetValue('autocomplete_file_uri', UiOps.AutocompleteFileURI);
   UiOps.AutocompleteClosingDelay:= cfg.GetValue('autocomplete_closing_delay', UiOps.AutocompleteClosingDelay);
+  UiOps.AutocompleteReplaceOnRight:= cfg.GetValue('autocomplete_replace_on_right', UiOps.AutocompleteReplaceOnRight);
 
   UiOps.FindShowOnStart:= cfg.GetValue('find_show_on_start', UiOps.FindShowOnStart);
   UiOps.FindSuggestSel:= cfg.GetValue('find_suggest_sel', UiOps.FindSuggestSel);

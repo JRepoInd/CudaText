@@ -287,6 +287,7 @@ type
     AutocompleteInCommentsHTML: boolean;
     AutocompleteInStrings: boolean;
     AutocompleteClosingDelay: integer;
+    AutocompleteReplaceOnRight: boolean;
 
     HtmlBackgroundColorPair: array[boolean] of TColor;
     CharMapFontIncreasing: integer;
@@ -349,6 +350,7 @@ type
     FindSuggestInSelection: boolean;
     FindCurrentWordCaseSensitive: TUiOpsFindCaseSensitive;
     FindUseReddishIndicator: boolean;
+    FindStatusbarDelayToReplaceIndexToQuestion: integer;
 
     FindHiddenButtons: string;
     FindShow_FindFirst: boolean;
@@ -480,8 +482,6 @@ type
     Emmet_TrimLineMarkers: boolean;
     Emmet_WordWrap: boolean;
 
-    HotkeyFindDialog,
-    HotkeyReplaceDialog,
     HotkeyFindFirst,
     HotkeyFindNext,
     HotkeyFindPrev,
@@ -2020,6 +2020,7 @@ begin
     AutocompleteInCommentsHTML:= true;
     AutocompleteInStrings:= true;
     AutocompleteClosingDelay:= 300;
+    AutocompleteReplaceOnRight:= true;
 
     HtmlBackgroundColorPair[false]:= $F0F0F0;
     HtmlBackgroundColorPair[true]:= $101010;
@@ -2093,6 +2094,7 @@ begin
     FindSuggestInSelection:= false; //option "find_suggest_in_selection"
     FindCurrentWordCaseSensitive:= TUiOpsFindCaseSensitive.FromDialog; //option "find_sel_case"
     FindUseReddishIndicator:= true;
+    FindStatusbarDelayToReplaceIndexToQuestion:= 150;
 
     FindHiddenButtons:= '';
     FindShow_FindFirst:= true;
@@ -2245,8 +2247,6 @@ begin
     Emmet_TrimLineMarkers:= true;
     Emmet_WordWrap:= false;
 
-    HotkeyFindDialog:= 'Ctrl+F';
-    HotkeyReplaceDialog:= 'Ctrl+R';
     HotkeyFindFirst:= 'Alt+Enter';
     HotkeyFindNext:= 'F3';
     HotkeyFindPrev:= 'Shift+Enter';

@@ -61,6 +61,9 @@ function SExtractNumberFromStringAfterChar(const S: string; ch: char; Default: i
 function SParseIconFilenameWithWidthHeight(const AStr: string;
   {out AName: string;} out AWidth, AHeight: integer): boolean;
 
+function SEscapeRegexSpecialChars(const S: Unicodestring): Unicodestring;
+function SEscapeRegexSpecialChars(const S: string): string;
+
 
 implementation
 
@@ -549,6 +552,38 @@ begin
     Inc(Ofs);
   result := Copy(S, Ofs, 1 + Len - Ofs);
 end;
+
+const
+  cRegexSpecialChars = '-+*=\()[]{}<>.,:?#$^|';
+
+function SEscapeRegexSpecialChars(const S: Unicodestring): Unicodestring;
+var
+  i: integer;
+begin
+  Result:= '';
+  for i:= 1 to Length(S) do
+  begin
+    if Pos(S[i], cRegexSpecialChars)=0 then
+      Result+= S[i]
+    else
+      Result+= '\'+S[i];
+  end;
+end;
+
+function SEscapeRegexSpecialChars(const S: string): string;
+var
+  i: integer;
+begin
+  Result:= '';
+  for i:= 1 to Length(S) do
+  begin
+    if Pos(S[i], cRegexSpecialChars)=0 then
+      Result+= S[i]
+    else
+      Result+= '\'+S[i];
+  end;
+end;
+
 
 end.
 
