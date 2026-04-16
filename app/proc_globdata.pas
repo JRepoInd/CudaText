@@ -297,7 +297,6 @@ type
     AutocompleteClosingDelay: integer;
     AutocompleteReplaceOnRight: boolean;
 
-    HtmlBackgroundColorPair: array[boolean] of TColor;
     CharMapFontIncreasing: integer;
     EnableBracketFinderWithSelection: boolean;
 
@@ -588,7 +587,7 @@ type
     OpAutocompleteCommitIfSingleItem: boolean;
     OpAutocompleteSymbolsAllowedBeforeCaret: UnicodeString;
 
-    OpUnderlineColorFiles: UnicodeString;
+    OpUnderlineColor: boolean;
     OpUnderlineColorSize: integer;
     OpLinks: boolean;
     OpLinksRegex: UnicodeString;
@@ -1894,7 +1893,7 @@ begin
     OpAutocompleteCommitIfSingleItem:= false;
     OpAutocompleteSymbolsAllowedBeforeCaret:= '.:>''"';
 
-    OpUnderlineColorFiles:= '*';
+    OpUnderlineColor:= false;
     OpUnderlineColorSize:= 3;
     OpLinks:= true;
     OpLinksRegex:= TATSynEdit.cUrlRegexInitial;
@@ -2139,8 +2138,6 @@ begin
     AutocompleteClosingDelay:= 300;
     AutocompleteReplaceOnRight:= true;
 
-    HtmlBackgroundColorPair[false]:= $F0F0F0;
-    HtmlBackgroundColorPair[true]:= $101010;
     CharMapFontIncreasing:= 150;
     EnableBracketFinderWithSelection:= true; //True: like in Notepad++/Kate; False: like in Sublime/VSCode
 

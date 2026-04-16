@@ -283,7 +283,7 @@ type
     procedure EditorOnPaint(Sender: TObject);
     procedure EditorOnEnter(Sender: TObject);
     procedure EditorOnDrawLine(Sender: TObject; C: TCanvas; ALineIndex, AX, AY: integer;
-      const AStr: atString; const ACharSize: TATEditorCharSize; constref AExtent: TATIntFixedArray);
+      const AStr: UnicodeString; const ACharSize: TATEditorCharSize; constref AExtent: TATIntFixedArray);
     procedure EditorOnDrawRuler(Sender: TObject; C: TCanvas; const ARect: TRect; var AHandled: boolean);
     procedure EditorOnCalcBookmarkColor(Sender: TObject; ABookmarkKind: integer; var AColor: TColor);
     procedure EditorOnHotspotEnter(Sender: TObject; AHotspotIndex: integer);
@@ -374,7 +374,7 @@ type
     function GetIsPreview: boolean;
     procedure SetIsPreview(AValue: boolean);
 
-    procedure DoSaveUndo(Ed: TATSynEdit; const AFileName: string);
+    procedure DoSaveUndo(Ed: TATSynEdit);
     procedure DoLoadUndo(Ed: TATSynEdit);
     procedure DoSaveHistory_Caret(Ed: TATSynEdit; c: TAppJsonConfig; const path: UnicodeString);
     procedure RestoreSavedLexer(Ed: TATSynEdit);
@@ -1151,66 +1151,35 @@ begin
     ]);
 end;
 
-function _ContrastColor(AColor: TColor): TColor;
-var
-  bLight: boolean;
-  red, green, blue: integer;
-begin
-  red:= AColor and $FF;
-  green:= AColor shr 8 and $FF;
-  blue:= AColor shr 16 and $FF;
-  // Use different scaling with red, green, and blue to account
-  // for perceived intensity. Addresses issue #3624
-  // See https://www.w3.org/TR/AERT/#color-contrast
-  // Color brightness can determined by the following formula:
-  // ((Red value X 299) + (Green value X 587) + (Blue value X 114)) / 1000
-  // ((299+587+114) * 128) = 128000
-  // ((299+587+114) * $80) = $1f400
-  bLight:= red*299 + green*587 + blue*114 > $1f400;
-  Result:= UiOps.HtmlBackgroundColorPair[bLight];
-end;
-
-
 procedure TEditorFrame.EditorOnDrawLine(Sender: TObject; C: TCanvas;
-  ALineIndex, AX, AY: integer; const AStr: atString; const ACharSize: TATEditorCharSize;
+  ALineIndex, AX, AY: integer; const AStr: UnicodeString; const ACharSize: TATEditorCharSize;
   constref AExtent: TATIntFixedArray);
 var
   Ed: TATSynEdit;
   RectLine: TRect;
-  NLineWidth, X1, X2, Y, NLen, NStartPos: integer;
-  bColorizeBack, bColorizeInBrackets, bFoundBrackets: boolean;
+  NStartPos, i: SizeInt;
+  NColorLen, NLineWidth, X1, X2, Y: integer;
   NColor: TColor;
-  i: integer;
+  bColorizeBack, bColorizeInBrackets, bFoundBrackets: boolean;
 begin
   if AStr='' then Exit;
+  Ed:= Sender as TATSynEdit;
+  if not Ed.OptUnderlineHtmlColor then Exit;
+  if Length(AStr)>ATEditorOptions.MaxLineLenToUnderlineHtmlColors then Exit;
+  if SStringHasBinaryChars(AStr) then Exit;
 
-  if not IsFilenameListedInExtensionList(FileName, EditorOps.OpUnderlineColorFiles)
-    then exit;
-
-  //skip lines in binary files, e.g. *.dll
-  for i:= 1 to Length(AStr) do
-    case Ord(AStr[i]) of
-      0..8:
-        exit;
-    end;
-
-  NLineWidth:= EditorOps.OpUnderlineColorSize;
+  NLineWidth:= Ed.OptUnderlineHtmlColorSize;
   bColorizeBack:= NLineWidth>=10;
   bColorizeInBrackets:= NLineWidth=11;
 
   //avoid background hilite for lines with selection
   if bColorizeBack then
-  begin
-    if Sender=nil then
-      raise Exception.Create('Sender=nil in TEditorFrame.EditorOnDrawLine');
-    Ed:= Sender as TATSynEdit;
     if Ed.Carets.IsLineWithSelection(ALineIndex) then exit;
-  end;
 
   for i:= 1 to Length(AStr)-3 do
   begin
     NColor:= clNone;
-    NLen:= 0;
+    NColorLen:= 0;
     bFoundBrackets:= false;
 
     case AStr[i] of
@@ -1235,8 +1204,8 @@ begin
           //find #rgb, #rrggbb
           if IsCharHexDigit(AStr[i+1]) then
           begin
-            NColor:= TATHtmlColorParserW.ParseTokenRGB(@AStr[i+1], NLen, clNone);
-            Inc(NLen);
+            NColor:= TATHtmlColorParserW.ParseTokenRGB(@AStr[i+1], NColorLen, clNone);
+            Inc(NColorLen);
           end;
         end;
       'r':
@@ -1249,7 +1218,7 @@ begin
             //don't allow word-char before
             if (i>1) and IsCharWord(AStr[i-1], ATEditorOptions.DefaultNonWordChars) then Continue;
 
-            NColor:= TATHtmlColorParserW.ParseFunctionRGB(AStr, i, NLen);
+            NColor:= TATHtmlColorParserW.ParseFunctionRGB(AStr, i, NColorLen);
             bFoundBrackets:= true;
           end;
         end;
@@ -1263,7 +1232,7 @@ begin
             //don't allow word-char before
             if (i>1) and IsCharWord(AStr[i-1], ATEditorOptions.DefaultNonWordChars) then Continue;
 
-            NColor:= TATHtmlColorParserW.ParseFunctionHSL(AStr, i, NLen);
+            NColor:= TATHtmlColorParserW.ParseFunctionHSL(AStr, i, NColorLen);
             bFoundBrackets:= true;
           end;
         end;
@@ -1275,7 +1244,7 @@ begin
       if bColorizeInBrackets and bFoundBrackets then
       begin
         NStartPos:= PosEx('(', AStr, i+2)+1;
-        NLen:= Max(1, NLen-1-(NStartPos-i))
+        NColorLen:= Max(1, NColorLen-1-(NStartPos-i))
       end
       else
         NStartPos:= i;
@@ -1285,8 +1254,8 @@ begin
       else
         X1:= AX;
 
-      if NStartPos-2+NLen<ATEditorMaxFixedArray then
-        X2:= AX+AExtent.Data[NStartPos-2+NLen]
+      if NStartPos-2+NColorLen<ATEditorMaxFixedArray then
+        X2:= AX+AExtent.Data[NStartPos-2+NColorLen]
       else
         X2:= 0;
 
@@ -1294,14 +1263,14 @@ begin
 
       if bColorizeBack then
       begin
-        C.Font.Color:= _ContrastColor(NColor);
+        C.Font.Color:= AppContrastColor(NColor);
         C.Font.Style:= [];
         C.Brush.Color:= NColor;
         RectLine:= Rect(X1, AY, X2, Y);
         {$ifdef LCLGtk2}
         C.FillRect(RectLine); //needed only when we use CairoTextOut (ie on gtk2)
         {$endif}
-        CanvasTextOutSimplest(C, RectLine.Left, RectLine.Top, Copy(AStr, NStartPos, NLen));
+        CanvasTextOutSimplest(C, RectLine.Left, RectLine.Top, Copy(AStr, NStartPos, NColorLen));
       end
       else
       begin
@@ -1736,7 +1705,7 @@ var
   Caret: TATCaretItem;
   St: TATStrings;
   EdIndex: integer;
-  bChangedLexer, bChanged1, bChanged2: boolean;
+  bChangedLexer, bChanged1: boolean;
 begin
   if AppSessionIsLoading then exit; //fix issue #4436
 
@@ -1750,7 +1719,6 @@ begin
 
   bChangedLexer:= false;
   bChanged1:= false;
-  bChanged2:= false;
 
   //temporary turn off lexer, when editing too long line
   if Assigned(Ed.AdapterForHilite) and (Ed.Carets.Count>0) then
@@ -1774,10 +1742,14 @@ begin
   end;
 
   bChanged1:= Ed.Markers.DeleteWithTag(UiOps.FindOccur_TagValue);
+
+  {
+  //don't clear brackets attribs, to avoid flicketing on typing text inside pair brackets. fixes CudaText #6272
   if FBracketHilite then
     bChanged2:= EditorBracket_ClearHilite(Ed);
+    }
 
-  if bChangedLexer or bChanged1 or bChanged2 then
+  if bChangedLexer or bChanged1 then
     Ed.Update;
 
   //sync changes in 2 editors, when frame is splitted
@@ -2665,7 +2637,7 @@ begin
 
   if Assigned(FViewer) then
   begin
-    ApplyThemeToViewer(FViewer);
+    AppApplyThemeToViewer(FViewer);
     FViewer.Invalidate;
   end;
 
@@ -2718,7 +2690,7 @@ begin
       S:= IntToStr(cmd_SetLexer)+','+an.LexerName
     else
       S:= IntToStr(cmd_SetLexer)+',';
-    if StringsTrailingText(MacroStrings, 1)<>S then
+    if AppStringsTrailingText(MacroStrings, 1)<>S then
       MacroStrings.Add(S);
   end;
 
@@ -2835,7 +2807,7 @@ begin
       S:= IntToStr(cmd_SetLexer)+','+an.LexerName+msgLiteLexerSuffix
     else
       S:= IntToStr(cmd_SetLexer)+',';
-    if StringsTrailingText(MacroStrings, 1)<>S then
+    if AppStringsTrailingText(MacroStrings, 1)<>S then
       MacroStrings.Add(S);
   end;
 
@@ -2901,7 +2873,7 @@ begin
     end;
   end;
 
-  ApplyThemeToViewer(FViewer);
+  AppApplyThemeToViewer(FViewer);
   FViewer.Show;
   FViewer.OpenStream(FViewerStream);
   if DetectStreamUtf8NoBom(FViewerStream, UiOps.NonTextFilesBufferKb)=TATBufferUTF8State.Yes then
@@ -3440,7 +3412,7 @@ begin
 
     UpdateCaptionFromFilename;
 
-    DoSaveUndo(Ed, SFileName);
+    DoSaveUndo(Ed);
     DoPyEvent(Ed, TAppPyEvent.OnSaveAfter, []);
     if Assigned(FOnSaveFile) then
       FOnSaveFile(Ed, SFileName);
@@ -4265,12 +4237,15 @@ begin
   end;
 end;
 
-procedure TEditorFrame.DoSaveUndo(Ed: TATSynEdit; const AFileName: string);
+procedure TEditorFrame.DoSaveUndo(Ed: TATSynEdit);
+var
+  SFileName: string;
 begin
-  if IsFilenameListedInExtensionList(AFileName, UiOps.UndoPersistent) then
+  SFileName:= Ed.FileName;
+  if IsFilenameListedInExtensionList(SFileName, UiOps.UndoPersistent) then
   begin
-    _WriteStringToFileInHiddenDir(AppFile_UndoRedo(AFileName, false), Ed.UndoAsString);
-    _WriteStringToFileInHiddenDir(AppFile_UndoRedo(AFileName, true), Ed.RedoAsString);
+    _WriteStringToFileInHiddenDir(AppFile_UndoRedo(SFileName, false), Ed.UndoAsString);
+    _WriteStringToFileInHiddenDir(AppFile_UndoRedo(SFileName, true), Ed.RedoAsString);
   end;
 end;
 

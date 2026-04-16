@@ -3,6 +3,9 @@
   - fixed
   * changed
 
+- fix: lexer Markdown: fixed rule for crossed text; improved bold/italic rules for CJK text; fixed rules for fenced blocks (by @zen010101)
+- fix: avoid flickering of pair-brackets, when user types text inside brackets (thanks @iconv)
+
 1.234.0 (2026/04)
 
 + add: new wiki topic "How to open all picture-files in hex mode"
@@ -15,6 +18,8 @@
 * change: changed order of commands "trim spaces: ...." in the Cmd Palette, and renamed them (idea by @pintassilgo)
 * change: made buttons 'X'/'v' wider in the Console / code-tree (idea by @sl23)
 * change: deleted option "unicode_full_width"; its internal value changed from 190 to 200 to better align 'tables' with CJK text (idea by @zen010101)
+* change: deleted menu item "Plugins / Addons Manager / Download all...", instead use the script "download_addons.py" from GitHub repo
+* change: replaced option "underline_color_files" (it was ugly list of file extensions which is very unusual for options) with boolean "underline_color" which now must be set in lexer-specific configs; it is activated in these default lexer-specific configs: HTML CSS JS JSON
 - fix: sometimes Redo may give incorrect selection (thanks @pintassilgo)
 - fix: lexer XML: corrected CSS rule, now it works with modern SVG files, which don't have CDATA construct for CSS blocks
 

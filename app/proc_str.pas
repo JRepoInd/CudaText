@@ -48,13 +48,16 @@ function IsLexerListed(const AItem, AItemList: string): boolean;
 function IsFilenameListedInExtensionList(const AFilename, AExtList: string): boolean;
 
 type
-  TRegexParts = array[0..8] of
+  TAppRegexParts = array[0..8] of
     record
       Pos, Len: integer;
       Str: string;
     end;
-function SRegexFindParts(const ARegex, AStr: string; out AParts: TRegexParts): boolean;
+
+function SRegexFindParts(const ARegex, AStr: string; out AParts: TAppRegexParts): boolean;
 function SStringToPythonString(const Str: string; AndQuote: boolean=true): string;
+function SStringHasBinaryChars(const S: string): boolean;
+function SStringHasBinaryChars(const S: UnicodeString): boolean;
 
 function SMaskFilenameSlashes(const fn: string): string;
 procedure SParseFilenameWithTwoNumbers(var fn: string; out NLine, NColumn: integer);
@@ -156,7 +159,7 @@ begin
 end;
 
 
-function SRegexFindParts(const ARegex, AStr: string; out AParts: TRegexParts): boolean;
+function SRegexFindParts(const ARegex, AStr: string; out AParts: TAppRegexParts): boolean;
 var
   Obj: TRegExpr;
   NCount, i: integer;
@@ -282,13 +285,33 @@ end;
 function IsFilenameListedInExtensionList(const AFilename, AExtList: string): boolean;
 var
   Ext: string;
+  iMax, i: SizeInt;
 begin
   if AExtList='*' then exit(true);
   if AExtList='' then exit(false);
-  Ext:= LowerCase(ExtractFileExt(AFilename));
+
+  Ext:= ExtractFileExt(AFileName);
   if Ext='' then exit(false);
-  if Ext[1]='.' then Delete(Ext, 1, 1);
-  Result:= Pos(SSurroundByCommas(Ext), SSurroundByCommas(AExtList))>0;
+
+  //ascii lowercase
+  for i:= 1 to Length(Ext) do
+    if (Ord(Ext[i])>=Ord('A')) and (Ord(Ext[i])<=Ord('Z')) then
+      Inc(Ext[i], 32);
+  if Ext[1]='.' then
+    Delete(Ext, 1, 1);
+
+  if Ext='' then exit(false);
+
+  iMax:= Length(AExtList)-Length(Ext)+1; // 'aaa,bbb'
+  if iMax<1 then exit(false);
+
+  i:= 0;
+  repeat
+    i:= Pos(Ext, AExtList, i+1);
+    if i=0 then exit(false);
+    if ((i=1) or (AExtList[i-1]=',')) and
+      ((i=iMax) or (AExtList[i+Length(Ext)]=',')) then exit(true);
+  until false;
 end;
 
 function STextListsFuzzyInput(const AText, AFind: string;
@@ -620,6 +643,31 @@ begin
     Result:= IntToStr(N)+'ms';
 end;
 
+function SStringHasBinaryChars(const S: string): boolean;
+var
+  i: SizeInt;
+  N: integer;
+begin
+  for i:= 1 to Length(S) do
+  begin
+    N:= Ord(S[i]);
+    if (N<32) and (N<>9) then Exit(true);
+  end;
+  Result:= false;
+end;
+
+function SStringHasBinaryChars(const S: UnicodeString): boolean;
+var
+  i: SizeInt;
+  N: integer;
+begin
+  for i:= 1 to Length(S) do
+  begin
+    N:= Ord(S[i]);
+    if (N<32) and (N<>9) then Exit(true);
+  end;
+  Result:= false;
+end;
 
 end.
 
